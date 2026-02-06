@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore'
+import { collection, addDoc, serverTimestamp, getDocs } from 'firebase/firestore'
 import { db } from '../firebase'
 import JerseyPreview from '../components/JerseyPreview'
 import { generateCompositeAI, downloadComposite } from '../utils/generateCompositeAI'
+import { sendOrderEmail } from '../utils/sendOrderEmail'
 
 export default function ReviewBilling() {
   const { state } = useLocation()
@@ -11,6 +12,8 @@ export default function ReviewBilling() {
   const [submitting, setSubmitting] = useState(false)
   const [done, setDone] = useState(false)
   const [savedToDb, setSavedToDb] = useState(false)
+  const [emailSent, setEmailSent] = useState(false)
+  const [emailError, setEmailError] = useState(null)
   const [form, setForm] = useState({
     customerName: '',
     email: '',
@@ -63,6 +66,7 @@ export default function ReviewBilling() {
     e.preventDefault()
     if (!product) return
     setSubmitting(true)
+    setEmailError(null)
 
     // Save order to Firestore with already-captured image URLs
     try {
@@ -80,6 +84,48 @@ export default function ReviewBilling() {
           createdAt: serverTimestamp(),
         })
         setSavedToDb(true)
+
+        // Send email notifications to stores
+        try {
+          // Fetch store emails from Firestore
+          const storesSnapshot = await getDocs(collection(db, 'stores'))
+          const storeEmails = []
+          storesSnapshot.docs.forEach((doc) => {
+            const data = doc.data()
+            if (data.email) {
+              storeEmails.push(data.email)
+            }
+          })
+
+          if (storeEmails.length > 0) {
+            const emailResult = await sendOrderEmail(
+              {
+                orderId: orderId || 'N/A',
+                product: {
+                  name: product.name,
+                  price: product.price,
+                },
+                customization: customization || {},
+                customer: {
+                  name: form.customerName,
+                  email: form.email,
+                  phone: form.phone,
+                  address: `${form.address}, ${form.city}, ${form.state} ${form.zip}`,
+                },
+              },
+              storeEmails
+            )
+
+            if (emailResult.success) {
+              setEmailSent(true)
+            } else {
+              setEmailError(emailResult.error)
+            }
+          }
+        } catch (emailErr) {
+          console.error('Email sending failed:', emailErr)
+          setEmailError('Failed to send email notifications')
+        }
       }
       setDone(true)
     } catch (err) {
@@ -104,6 +150,16 @@ export default function ReviewBilling() {
               ? "Thank you! Your custom order has been saved. We'll send a confirmation to your email."
               : "Thank you! Your order has been received. Add Firebase config in .env to save orders and trigger email notifications."}
           </p>
+          {emailSent && (
+            <p style={{ ...styles.successText, color: 'var(--success)', marginTop: '0.5rem' }}>
+              ✓ Store notifications sent successfully!
+            </p>
+          )}
+          {emailError && (
+            <p style={{ ...styles.successText, color: '#ef4444', marginTop: '0.5rem', fontSize: '0.9rem' }}>
+              ⚠ Note: {emailError}
+            </p>
+          )}
           <button style={styles.backBtn} onClick={() => navigate('/')}>
             Back to products
           </button>
