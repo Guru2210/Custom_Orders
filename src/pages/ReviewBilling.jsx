@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase'
 import JerseyPreview from '../components/JerseyPreview'
+import { generateCompositeAI, downloadComposite } from '../utils/generateCompositeAI'
 
 export default function ReviewBilling() {
   const { state } = useLocation()
@@ -31,6 +32,32 @@ export default function ReviewBilling() {
   }, [product, navigate])
 
   const update = (key, value) => setForm((f) => ({ ...f, [key]: value }))
+
+  const handleDownloadComposite = async () => {
+    if (!product.backImageUrl) {
+      alert('No shirt image available for composite')
+      return
+    }
+
+    if (!customization?.name && !customization?.number) {
+      alert('No customization to add to composite')
+      return
+    }
+
+    try {
+      const blob = await generateCompositeAI({
+        shirtImageUrl: product.backImageUrl,
+        name: customization.name,
+        number: customization.number,
+        textColor: customization.textColor,
+      })
+      const filename = `jersey-composite-${customization.number || 'custom'}.svg`
+      downloadComposite(blob, filename)
+    } catch (error) {
+      console.error('Failed to generate composite:', error)
+      alert('Failed to generate composite. Please try again.')
+    }
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -148,6 +175,13 @@ export default function ReviewBilling() {
                 </span>
               )}
             </div>
+
+            {/* Download Composite Button */}
+            {product.backImageUrl && customization && (customization.name || customization.number) && (
+              <button style={styles.downloadCompositeBtn} onClick={handleDownloadComposite}>
+                Download Composite (AI)
+              </button>
+            )}
           </div>
 
           {/* Totals Section */}
@@ -318,7 +352,7 @@ const styles = {
   numberText: {
     fontSize: 'clamp(3rem, 8vw, 5rem)',
     fontWeight: 900,
-    fontFamily: 'var(--font-display)',
+    fontFamily: 'var(--font-jersey)',
     lineHeight: 1,
     textShadow: '2px 2px 4px rgba(0,0,0,0.5), -1px -1px 2px rgba(0,0,0,0.3)',
     letterSpacing: '0.1em',
@@ -326,13 +360,26 @@ const styles = {
   nameText: {
     fontSize: 'clamp(1.5rem, 3vw, 2.5rem)',
     fontWeight: 700,
-    fontFamily: 'var(--font-display)',
+    fontFamily: 'var(--font-jersey)',
     lineHeight: 1,
     textShadow: '1px 1px 3px rgba(0,0,0,0.5), -1px -1px 2px rgba(0,0,0,0.3)',
     letterSpacing: '0.15em',
   },
   meta: { display: 'flex', flexDirection: 'column', gap: '0.25rem', marginTop: '0.75rem' },
   metaDetail: { color: 'var(--text-muted)', fontSize: '0.9rem' },
+  downloadCompositeBtn: {
+    width: '100%',
+    padding: '0.75rem',
+    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    color: 'white',
+    border: 'none',
+    borderRadius: 8,
+    fontSize: '0.9rem',
+    fontWeight: 600,
+    cursor: 'pointer',
+    marginTop: '1rem',
+    transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+  },
   totals: {
     background: 'var(--bg-card)',
     border: '1px solid var(--border)',
